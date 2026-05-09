@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# 环境变量（包含敏感信息）
+.env
+.env.local
+.env.production
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 日志
+*.log
+logs/
+
+# Nginx
+nginx-1.20.2/
+
+# Node modules (前端)
+forward/-AI-Digital-Worker-development-project/node_modules/
+forward/-AI-Digital-Worker-development-project/dist/
+forward/-AI-Digital-Worker-development-project/.git/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 临时文件
+%s
