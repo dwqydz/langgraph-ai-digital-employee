@@ -1,6 +1,6 @@
 # 🤖 AI数字员工系统
 
-一个基于 LangChain + Vue3 的智能助手系统，支持待办管理、会议室预定、天气查询等功能，通过自然语言与用户交互。
+一个基于 LangChain + Vue3 的智能助手系统，支持待办管理、会议室预定、天气查询、企业知识库检索等功能，通过自然语言与用户交互。
 
 ![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)
@@ -30,6 +30,13 @@
 - 24小时逐时预报
 - 基于阿里云 MCP 服务
 
+### 📚 企业知识库检索 (RAG)
+- 基于向量数据库的智能检索
+- 支持公司政策、流程、制度查询
+- ChromaDB 向量存储
+- DashScope 文本嵌入
+- 智能判断是否需要检索
+
 ### 💬 对话历史
 - 完整的对话记录
 - 会话管理
@@ -41,7 +48,8 @@
 - **框架**: FastAPI + Uvicorn
 - **AI**: LangChain + ChatTongyi (通义千问 qwen-plus)
 - **数据库**: SQLite + SQLAlchemy (异步)
-- **认证**: JWT Token
+- **向量数据库**: ChromaDB
+- **认证**: Session Token (数据库存储)
 - **MCP**: 阿里云通义千问 MCP 服务
 
 ### 前端
@@ -112,10 +120,17 @@ project/
 ├── agent/                  # AI Agent 模块
 │   ├── llm.py             # LLM 配置 (ChatTongyi)
 │   ├── task_classifier.py # 任务分类器
+│   ├── chat_agent.py      # 聊天 Agent (支持RAG)
 │   ├── todo_agent.py      # 待办 Agent
 │   ├── meeting_agent.py   # 会议 Agent
 │   ├── weather_agent.py   # 天气 Agent
 │   └── langgraph_workflow.py # LangGraph 工作流
+├── RAG/                    # RAG 检索增强生成模块
+│   ├── vector_db.py       # 向量数据库管理
+│   ├── retriever.py       # 检索器
+│   ├── init_rag.py        # 初始化脚本
+│   └── chroma_db/         # ChromaDB 数据存储
+├── DATA/                   # 企业知识库文档 (Markdown格式)
 ├── routers/               # API 路由
 │   ├── agent.py          # Agent 接口
 │   ├── todo.py           # 待办接口
@@ -171,8 +186,10 @@ python -m pytest integration/
 
 - ✅ API 密钥通过环境变量管理
 - ✅ `.env` 文件已加入 `.gitignore`
-- ✅ 使用 JWT 进行身份认证
+- ✅ 使用 Session Token 进行身份认证（数据库存储）
 - ✅ 密码使用 SHA256 哈希存储
+- ⚠️ **DATA/** 目录包含企业内部文档，请根据实际情况决定是否上传
+- ⚠️ **RAG/chroma_db/** 目录为向量数据库，建议不上传到公开仓库
 
 **重要**: 请勿将 `.env` 文件或 API 密钥提交到版本控制系统！
 

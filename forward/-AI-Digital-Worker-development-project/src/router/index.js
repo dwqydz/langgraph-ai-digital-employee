@@ -6,6 +6,7 @@ import Login from '@/views/Login.vue'
 import Todo from '@/views/Todo.vue'
 import Meeting from '@/views/Meeting.vue'
 import Weather from '@/views/Weather.vue'
+import Chat from '@/views/Chat.vue'
 
 // 路由配置
 const routes = [
@@ -37,6 +38,12 @@ const routes = [
         name: 'Weather',
         component: Weather,
         meta: { title: '天气助手', icon: '🌤️' }
+      },
+      {
+        path: 'chat',
+        name: 'Chat',
+        component: Chat,
+        meta: { title: '智能对话', icon: '💬' }
       }
     ]
   }

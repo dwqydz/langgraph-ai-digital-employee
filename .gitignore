@@ -21,6 +21,12 @@ build/
 *.sqlite
 *.sqlite3
 
+# RAG 向量数据库（数据文件，不需要上传）
+RAG/chroma_db/
+
+# 企业知识库文档（可选，根据实际情况决定是否上传）
+# DATA/
+
 # IDE
 .idea/
 .vscode/

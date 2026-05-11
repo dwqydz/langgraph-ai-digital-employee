@@ -12,6 +12,7 @@ from agent.task_classifier import get_task_classifier
 from agent.todo_agent import get_todo_agent
 from agent.meeting_agent import get_meeting_agent
 from agent.weather_agent import get_weather_agent
+from agent.chat_agent import get_chat_agent
 from agent.memory_manager import get_memory, update_memory_state, format_context_for_llm
 from crud.chat_history_crud import save_chat_message
 
@@ -127,26 +128,14 @@ async def weather_agent_node(state: AgentState) -> AgentState:
 
 async def chat_node(state: AgentState) -> AgentState:
     """
-    普通对话节点 - 使用LLM直接回复 (集成记忆上下文)
+    聊天节点 - ChatAgent处理普通对话 (集成记忆上下文)
     """
     print("[LangGraph] >>> 进入Chat节点")
     
-    from agent.llm import get_qwen_llm
-    llm = get_qwen_llm(temperature=0.7)
+    chat_agent = get_chat_agent()
+    result = await chat_agent.process(state["message"], state.get('memory_context'))
     
-    # 构建带记忆的 Prompt
-    context_part = state.get('memory_context', '')
-    if context_part:
-        prompt = f"【对话背景】\n{context_part}\n\n【当前任务】\n你是一个友好的AI助手。用户说: {state['message']}\n请结合上述背景友好地回复。"
-    else:
-        prompt = f"你是一个友好的AI助手。用户说: {state['message']}\n请友好地回复。"
-    
-    try:
-        response = await llm.ainvoke(prompt)
-        response_msg = response.content if hasattr(response, 'content') else str(response)
-    except Exception as e:
-        print(f"[LangGraph] Chat LLM Error: {e}")
-        response_msg = "抱歉，我暂时有点累，请稍后再试。"
+    response_msg = result.get("message", "")
     
     # 🔥 异步更新记忆
     asyncio.create_task(_update_session_memory(
@@ -155,7 +144,7 @@ async def chat_node(state: AgentState) -> AgentState:
     
     return {
         **state,
-        "execution_result": {"success": True},
+        "execution_result": result,
         "response": response_msg
     }
 
@@ -172,16 +161,13 @@ async def _update_session_memory(session_id: str, user_msg: str, ai_msg: str, ta
         print(f"[Memory] Redis Update failed: {e}")
 
 
-def route_by_task(state: AgentState) -> Literal["todo", "meeting", "weather", "__end__"]:
+def route_by_task(state: AgentState) -> Literal["todo", "meeting", "weather", "chat"]:
     """
     路由函数 - 根据task_type分发到对应节点
-    如果是 chat 或无法识别，则直接结束工作流，由 Router 层处理
     """
     task_type = state.get("task_type", "chat")
     print(f"[LangGraph] 路由到: {task_type}")
-    if task_type in ["todo", "meeting", "weather"]:
-        return task_type
-    return "__end__"
+    return task_type
 
 
 def create_multi_agent_workflow():
@@ -199,11 +185,12 @@ def create_multi_agent_workflow():
     # 1. 创建状态图
     workflow = StateGraph(AgentState)
     
-    # 2. 添加节点(Node) - 移除 chat_node
+    # 2. 添加节点(Node)
     workflow.add_node("classify", classify_node)
     workflow.add_node("todo", todo_agent_node)
     workflow.add_node("meeting", meeting_agent_node)
     workflow.add_node("weather", weather_agent_node)
+    workflow.add_node("chat", chat_node)
     
     # 3. 设置入口点
     workflow.set_entry_point("classify")
@@ -216,7 +203,7 @@ def create_multi_agent_workflow():
             "todo": "todo",
             "meeting": "meeting", 
             "weather": "weather",
-            "__end__": END
+            "chat": "chat"
         }
     )
     
@@ -224,6 +211,7 @@ def create_multi_agent_workflow():
     workflow.add_edge("todo", END)
     workflow.add_edge("meeting", END)
     workflow.add_edge("weather", END)
+    workflow.add_edge("chat", END)
     
     # 6. 编译工作流
     app = workflow.compile()

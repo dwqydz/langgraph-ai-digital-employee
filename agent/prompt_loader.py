@@ -46,6 +46,10 @@ class PromptManager:
     def get_weather_agent_prompt(self) -> str:
         """获取天气查询智能体prompt"""
         return self.load_prompt("weather_agent")
+    
+    def get_chat_agent_prompt(self) -> str:
+        """获取聊天智能体prompt"""
+        return self.load_prompt("chat_agent")
 
 
 # 单例模式

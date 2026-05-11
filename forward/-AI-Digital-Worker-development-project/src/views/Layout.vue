@@ -344,11 +344,23 @@ const handleNlpCommand = async () => {
           router.push('/weather')
         }
       } else if (result.task_type === 'chat') {
-        // 聊天类型显示回复消息
+        // 聊天类型：存储消息并跳转到chat页面
+        const chatData = {
+          userMessage: cmd,
+          aiResponse: result.response,
+          session_id: result.session_id,
+          timestamp: new Date().toISOString(),
+          task_type: result.task_type,
+          execution_result: result.execution_result
+        }
+        sessionStorage.setItem('nlp_chat_message', JSON.stringify(chatData))
+        
         ElMessage.success({
-          message: result.response || '✅ 请求已处理',
-          duration: 3
+          message: '正在为您打开智能对话...',
+          duration: 1.5
         })
+        
+        router.push('/chat')
       }
     } else if (result.execution_result) {
       // 操作失败

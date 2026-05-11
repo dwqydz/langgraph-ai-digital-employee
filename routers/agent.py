@@ -74,22 +74,6 @@ async def chat_with_agent(
             "memory_context": ""
         }, config={"recursion_limit": 10})
         
-        # 4. 处理闲聊 (Chat) 逻辑
-        # 如果工作流因为 chat 意图直接结束，result['response'] 可能为空
-        if not result.get("response"):
-            from agent.llm import get_qwen_llm
-            from langchain_core.messages import SystemMessage, HumanMessage
-            llm = get_qwen_llm(temperature=0.7)
-            try:
-                messages = [
-                    SystemMessage(content="你是一个专业的AI数字员工助手。请用**纯中文**、简洁、自然地回应用户的闲聊。不要使用英文单词，不要过度热情。"),
-                    HumanMessage(content=request.message)
-                ]
-                response = await llm.ainvoke(messages)
-                result["response"] = response.content if hasattr(response, 'content') else str(response)
-            except Exception as e:
-                result["response"] = "抱歉，我暂时无法回应。"
-        
         # 5. 异步保存 Agent 回复 (使用独立会话)
         async def _save_ai_msg():
             async with AsyncSessionLocal() as new_db:
@@ -261,3 +245,37 @@ async def get_capabilities():
             ]
         }
     }
+
+
+@router.get("/chat/history/{session_id}")
+async def get_chat_history(
+    session_id: str,
+    db = Depends(get_database),
+    current_user_id: int = Depends(get_current_user_id_from_session)
+):
+    """
+    获取指定会话的聊天历史
+    
+    Args:
+        session_id: 会话ID
+        db: 数据库会话
+        current_user_id: 当前用户ID
+        
+    Returns:
+        dict: 聊天历史消息列表
+    """
+    try:
+        from crud.chat_history_crud import get_session_messages
+        
+        messages = await get_session_messages(db, session_id, limit=100)
+        
+        return {
+            "code": 200,
+            "message": "获取成功",
+            "data": {
+                "session_id": session_id,
+                "messages": messages
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取历史失败: {str(e)}")

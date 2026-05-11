@@ -109,6 +109,7 @@ async def get_room_by_id(db: AsyncSession, room_id: int) -> MeetingRoom | None:
 async def auto_complete_expired_bookings(db: AsyncSession) -> int:
     """
     自动完成已过期的 confirmed 状态预约
+    🔥 增加5分钟缓冲时间，避免刚创建的预约立即被完成
     
     Args:
         db: 数据库会话
@@ -117,13 +118,15 @@ async def auto_complete_expired_bookings(db: AsyncSession) -> int:
         更新的记录数
     """
     now = datetime.datetime.now()
+    # 🔥 增加5分钟缓冲，避免刚创建的预约立即被完成
+    buffer_time = now - datetime.timedelta(minutes=5)
     
-    # 查找所有 end_time < 当前时间 且 status = 'confirmed' 的预约
+    # 查找所有 end_time < (当前时间-5分钟) 且 status = 'confirmed' 的预约
     result = await db.execute(
         select(MeetingBooking).where(
             and_(
                 MeetingBooking.status == "confirmed",
-                MeetingBooking.end_time < now
+                MeetingBooking.end_time < buffer_time  # 使用缓冲时间
             )
         )
     )

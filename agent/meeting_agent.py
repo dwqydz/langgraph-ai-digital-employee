@@ -82,11 +82,17 @@ class MeetingAgent:
     def _parse_json_response(self, response: str) -> Dict:
         """解析LLM返回的JSON字符串"""
         import json
+        import re
+        
+        print(f"[MeetingAgent] 原始响应前200字符: {response[:200]}")
         
         # 尝试直接解析
         try:
             # 提取JSON部分(可能包含在markdown代码块中)
             json_str = response.strip()
+            
+            # 移除可能的BOM或不可见字符
+            json_str = json_str.lstrip('\ufeff').strip()
             
             # 移除markdown代码块标记
             if '```json' in json_str:
@@ -94,9 +100,27 @@ class MeetingAgent:
             elif '```' in json_str:
                 json_str = json_str.split('```')[1].split('```')[0].strip()
             
+            # 尝试找到第一个 { 和最后一个 }
+            start_idx = json_str.find('{')
+            end_idx = json_str.rfind('}')
+            
+            if start_idx != -1 and end_idx != -1:
+                json_str = json_str[start_idx:end_idx+1]
+            else:
+                # 如果找不到 {}，尝试使用正则表达式提取JSON对象
+                json_match = re.search(r'\{.*\}', json_str, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+            
+            print(f"[MeetingAgent] 提取的JSON前200字符: {json_str[:200]}")
+            
             result = json.loads(json_str)
             return result
         except Exception as e:
+            print(f"[MeetingAgent] JSON解析失败详情:")
+            print(f"  错误: {str(e)}")
+            print(f"  响应长度: {len(response)}")
+            print(f"  完整响应: {response}")
             raise ValueError(f"JSON解析失败: {str(e)}, 原始响应: {response}")
     
     def filter_rooms_by_requirements(
@@ -401,29 +425,40 @@ class MeetingAgent:
         
         # 3. 格式化推荐结果
         formatted_rooms = []
+        suggested_time = self._generate_suggested_time(booking_info)
+        
         for room in recommended_rooms:
             formatted_rooms.append({
                 "id": room["id"],
-                "name": room["name"],
+                "name": room["name"],  # ✅ Meeting.vue使用
+                "room_name": room["name"],  # ✅ Chat.vue使用
                 "location": room["location"],
                 "capacity": room["capacity"],
                 "floor": room["floor"],
                 "building": room["building"],
                 "equipment": room["equipment"],
                 "match_score": room["match_score"],
-                "match_explanation": room.get("match_explanation", ""),
-                "suggested_time": self._generate_suggested_time(booking_info)
+                "match_explanation": room.get("match_explanation", "")
             })
         
-        return {
+        result = {
             "success": True,
             "message": f"为您找到{len(formatted_rooms)}个匹配的会议室",
             "intent": "book",
             "action_type": "book",
             "recommended_rooms": formatted_rooms,
-            "matched_bookings": []
+            "matched_bookings": [],
+            # ✅ 添加前端期望的 booking_info 字段（扁平化）
+            "booking_date": suggested_time["display"].split(' ')[0],  # 日期部分
+            "start_time": suggested_time["start_time"].split('T')[1][:5],  # HH:MM
+            "end_time": suggested_time["end_time"].split('T')[1][:5],  # HH:MM
+            "purpose": "会议"  # 默认用途
         }
-    
+        
+        print(f"[MeetingAgent] 返回数据: booking_date={result['booking_date']}, start_time={result['start_time']}, end_time={result['end_time']}")
+        
+        return result
+        
     async def _handle_cancel_complete_intent(
         self,
         db: AsyncSession,
@@ -553,10 +588,25 @@ class MeetingAgent:
         start_dt = datetime.strptime(f"{date_str} {hour:02d}:{minute:02d}", "%Y-%m-%d %H:%M")
         end_dt = start_dt + timedelta(hours=duration)
         
+        # 🔥 确保预约时间至少是未来1小时后，避免立即过期
+        now = datetime.now()
+        min_start_time = now + timedelta(hours=1)
+        
+        print(f"[MeetingAgent] 原始时间: {start_dt}, 最小允许时间: {min_start_time}")
+        
+        if start_dt < min_start_time:
+            print(f"[MeetingAgent] ⚠️ 检测到预约时间过早 ({start_dt})，调整为 {min_start_time}")
+            start_dt = min_start_time
+            # 保持时长不变，重新计算结束时间
+            end_dt = start_dt + timedelta(hours=duration)
+            print(f"[MeetingAgent] ✅ 调整后的时间: start={start_dt}, end={end_dt}")
+        else:
+            print(f"[MeetingAgent] ✅ 时间合理，无需调整")
+        
         return {
             "start_time": start_dt.isoformat(),
             "end_time": end_dt.isoformat(),
-            "display": f"{date_str} {start_dt.strftime('%H:%M')}-{end_dt.strftime('%H:%M')}"
+            "display": f"{start_dt.strftime('%Y-%m-%d')} {start_dt.strftime('%H:%M')}-{end_dt.strftime('%H:%M')}"
         }
 
 

@@ -292,7 +292,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
 import { useRoute, onBeforeRouteUpdate } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, List, Promotion } from '@element-plus/icons-vue'
@@ -815,13 +815,25 @@ onMounted(async () => {
       ElMessage.success('✅ 会议室预订已添加！')
     }
   }
+  
+  // 🔥 监听来自Chat页面的预约更新事件
+  window.addEventListener('meetingBookingUpdated', handleBookingUpdate)
+})
+
+// 处理预约更新事件
+const handleBookingUpdate = async () => {
+  console.log('[Meeting] 收到预约更新事件，刷新数据...')
+  await Promise.all([fetchMeetingRooms(), fetchMyBookings()])
+  ElMessage.success('✅ 检测到新的预约，已自动刷新！')
+}
+
+// 组件卸载时移除事件监听器
+onBeforeUnmount(() => {
+  window.removeEventListener('meetingBookingUpdated', handleBookingUpdate)
 })
 
 // 监听路由更新（处理在同一页面内路由参数变化的情况）
-onBeforeRouteUpdate(async (to, from, next) => {
-  // 先调用next()允许路由更新
-  next()
-  
+onBeforeRouteUpdate(async (to, from) => {
   // 如果新的路由有refresh参数，处理NLP数据
   if (to.query.refresh === 'true' || to.query.refresh === true) {
     // 等待一下确保DOM更新

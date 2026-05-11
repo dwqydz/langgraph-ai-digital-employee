@@ -26,3 +26,12 @@ export const voiceChatWithAgent = (formData) => {
     }
   })
 }
+
+/**
+ * 获取聊天历史
+ * @param {string} sessionId - 会话ID
+ * @returns {Promise}
+ */
+export const getChatHistory = (sessionId) => {
+  return api.get(`/agent/chat/history/${sessionId}`)
+}
