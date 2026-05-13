@@ -42,7 +42,7 @@
 
 ### 📊 RAGAS 评估系统
 - 自动化 RAG 系统质量评估
-- 69 个问题的标准测试集
+- 20 个问题的标准测试集
 - 6 大评估指标：
   - Context Precision（上下文精确率）
   - Context Recall（上下文召回率）
@@ -66,7 +66,7 @@
 - **向量数据库**: ChromaDB
 - **Embedding 模型**: BAAI/bge-base-zh-v1.5 (本地)
 - **重排序模型**: BAAI/bge-reranker-base (本地)
-- **认证**: Session Token (数据库存储)
+- **认证**: JWT Token
 - **MCP**: 阿里云通义千问 MCP 服务
 - **评估框架**: RAGAS
 
@@ -75,6 +75,7 @@
 - **UI**: Element Plus
 - **HTTP**: Axios
 - **路由**: Vue Router
+- **图表**: ECharts
 
 ## 📦 快速开始
 
@@ -101,8 +102,9 @@ pip install -r requirements_llm.txt
 # 复制环境配置模板
 cp .env.example .env
 
-# 编辑 .env 文件，填入你的 API Key
+# 编辑 .env 文件，填入你的 API Key 和 JWT 密钥
 # DASHSCOPE_API_KEY=your-api-key-here
+# JWT_SECRET_KEY=your-secret-key-change-this-in-production
 ```
 
 4. **启动服务**
@@ -228,7 +230,7 @@ python run_eval.py
 
 - ✅ API 密钥通过环境变量管理
 - ✅ `.env` 文件已加入 `.gitignore`
-- ✅ 使用 Session Token 进行身份认证（数据库存储）
+- ✅ 使用 JWT Token 进行身份认证
 - ✅ 密码使用 SHA256 哈希存储
 - ✅ RAGAS 评估结果不上传到 Git
 - ⚠️ **DATA/** 目录包含企业内部文档，请根据实际情况决定是否上传
