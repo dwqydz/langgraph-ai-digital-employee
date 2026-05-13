@@ -76,3 +76,18 @@ class ReminderReadResponse(BaseModel):
     code: int = 200
     message: str = "标记成功"
     data: dict
+
+
+class OverdueTodosData(BaseModel):
+    """即将逾期待办数据结构"""
+    total: int = 0
+    page: int = 1
+    page_size: int = 10
+    todos: List[TodoItem] = []
+
+
+class OverdueTodosResponse(BaseModel):
+    """即将逾期待办响应模式"""
+    code: int = 200
+    message: str = "查询成功"
+    data: OverdueTodosData

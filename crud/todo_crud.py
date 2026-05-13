@@ -5,7 +5,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, case, and_, or_
 import datetime
+import logging
 from model import Todo
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 def _calculate_time_status(due_date, status):
@@ -64,28 +68,35 @@ async def create_todo(
     Returns:
         新创建的待办事项对象
     """
-    # 自动计算时间状态
-    time_status = _calculate_time_status(due_date, "pending")
-    
-    new_todo = Todo(
-        user_id=user_id,
-        title=title,
-        description=description,
-        status="pending",
-        priority=priority,
-        category=category,
-        tags=tags,
-        due_date=due_date,
-        time_status=time_status,
-        reminder_enabled=reminder_enabled,
-        is_reminded=False
-    )
-    
-    db.add(new_todo)
-    await db.commit()
-    await db.refresh(new_todo)
-    
-    return new_todo
+    try:
+        # 自动计算时间状态
+        time_status = _calculate_time_status(due_date, "pending")
+        
+        new_todo = Todo(
+            user_id=user_id,
+            title=title,
+            description=description,
+            status="pending",
+            priority=priority,
+            category=category,
+            tags=tags,
+            due_date=due_date,
+            time_status=time_status,
+            reminder_enabled=reminder_enabled,
+            is_reminded=False
+        )
+        
+        db.add(new_todo)
+        await db.commit()
+        await db.refresh(new_todo)
+        
+        logger.info(f"[TODO_CREATE] user_id={user_id}, todo_id={new_todo.id}, title={title}")
+        return new_todo
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"[TODO_CREATE_ERROR] user_id={user_id}, title={title}, error={str(e)}", exc_info=True)
+        raise
 
 
 async def get_todos_by_user_id(

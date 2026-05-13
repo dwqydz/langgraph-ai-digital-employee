@@ -5,7 +5,7 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent.llm import get_qwen_llm
 # 导入数据库配置
@@ -20,6 +20,76 @@ class ChatRequest(BaseModel):
     """聊天请求模型 - 集成会话ID"""
     message: str
     session_id: Optional[str] = None  # 会话ID，用于多端互通和历史追踪
+
+
+class ChatResponseData(BaseModel):
+    """聊天响应数据"""
+    response: str
+    session_id: str
+    task_type: Optional[str] = None
+    execution_result: dict = {}
+
+
+class ChatResponse(BaseModel):
+    """聊天响应模型"""
+    code: int = 200
+    message: str = "处理成功"
+    data: ChatResponseData
+
+
+class IntentRecognitionData(BaseModel):
+    """意图识别数据"""
+    task_type: Optional[str] = None
+    intent_data: dict = {}
+
+
+class IntentRecognitionResponse(BaseModel):
+    """意图识别响应"""
+    code: int = 200
+    message: str = "识别成功"
+    data: IntentRecognitionData
+
+
+class CapabilityModule(BaseModel):
+    """能力模块"""
+    name: str
+    description: str
+    actions: list[str] = []
+    examples: list[str] = []
+
+
+class CapabilitiesData(BaseModel):
+    """能力数据"""
+    modules: list[CapabilityModule] = []
+    features: list[str] = []
+
+
+class CapabilitiesResponse(BaseModel):
+    """能力响应"""
+    code: int = 200
+    message: str = "获取成功"
+    data: CapabilitiesData
+
+
+class ChatHistoryMessage(BaseModel):
+    """聊天历史消息"""
+    id: int
+    role: str
+    content: str
+    created_at: str
+
+
+class ChatHistoryData(BaseModel):
+    """聊天历史数据"""
+    session_id: str
+    messages: list[ChatHistoryMessage] = []
+
+
+class ChatHistoryResponse(BaseModel):
+    """聊天历史响应"""
+    code: int = 200
+    message: str = "获取成功"
+    data: ChatHistoryData
 
 
 router = APIRouter(
@@ -80,16 +150,16 @@ async def chat_with_agent(
                 await save_chat_message(new_db, current_user_id, session_id, "assistant", result["response"])
         asyncio.create_task(_save_ai_msg())
         
-        return {
-            "code": 200,
-            "message": "处理成功",
-            "data": {
-                "response": result["response"],
-                "session_id": session_id,
-                "task_type": result.get("task_type"),
-                "execution_result": result.get("execution_result", {})
-            }
-        }
+        return ChatResponse(
+            code=200,
+            message="处理成功",
+            data=ChatResponseData(
+                response=result["response"],
+                session_id=session_id,
+                task_type=result.get("task_type"),
+                execution_result=result.get("execution_result", {})
+            )
+        )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
@@ -127,11 +197,16 @@ async def voice_chat_with_agent(
         # 添加识别文本
         result["recognized_text"] = text
         
-        return {
-            "code": 200,
-            "message": "处理成功",
-            "data": result
-        }
+        return ChatResponse(
+            code=200,
+            message="处理成功",
+            data=ChatResponseData(
+                response=result.get("message", ""),
+                session_id="voice_session",
+                task_type=result.get("task_type"),
+                execution_result=result
+            )
+        )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"语音处理失败: {str(e)}")
@@ -159,14 +234,14 @@ async def recognize_intent(
         async with AsyncSessionLocal() as db:
             result = await agent.process(message, db, current_user_id)
         
-        return {
-            "code": 200,
-            "message": "识别成功",
-            "data": {
-                "task_type": result.get("task_type"),
-                "intent_data": result.get("execution_result", {})
-            }
-        }
+        return IntentRecognitionResponse(
+            code=200,
+            message="识别成功",
+            data=IntentRecognitionData(
+                task_type=result.get("task_type"),
+                intent_data=result.get("execution_result", {})
+            )
+        )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"识别失败: {str(e)}")
@@ -180,62 +255,60 @@ async def get_capabilities():
     Returns:
         dict: 支持的功能列表
     """
-    return {
-        "code": 200,
-        "message": "获取成功",
-        "data": {
-            "modules": [
-                {
-                    "name": "todo",
-                    "description": "待办事项管理",
-                    "actions": [
+    return CapabilitiesResponse(
+        code=200,
+        message="获取成功",
+        data=CapabilitiesData(
+            modules=[
+                CapabilityModule(
+                    name="todo",
+                    description="待办事项管理",
+                    actions=[
                         "create_todo - 创建待办",
                         "query_todos - 查询待办列表",
                         "update_todo - 更新待办状态"
                     ],
-                    "examples": [
+                    examples=[
                         "帮我创建一个明天下午3点的项目评审会议待办",
                         "查看我的所有待办事项",
                         "把第一个待办标记为已完成"
                     ]
-                },
-                {
-                    "name": "meeting",
-                    "description": "会议室预订",
-                    "actions": [
+                ),
+                CapabilityModule(
+                    name="meeting",
+                    description="会议室预订",
+                    actions=[
                         "query_rooms - 查询可用会议室",
                         "book_meeting - 预订会议室",
                         "cancel_booking - 取消预订",
                         "query_bookings - 查询我的预订"
                     ],
-                    "examples": [
+                    examples=[
                         "有哪些能容纳20人的会议室",
                         "帮我预订明天下午2点到4点的会议室",
                         "取消我的预订",
                         "查看我的预订记录"
                     ]
-                },
-                {
-                    "name": "weather",
-                    "description": "天气查询",
-                    "actions": [
+                ),
+                CapabilityModule(
+                    name="weather",
+                    description="天气查询",
+                    actions=[
                         "query_weather - 查询当前天气",
                         "query_forecast - 查询天气预报"
                     ],
-                    "examples": [
+                    examples=[
                         "北京今天天气怎么样",
                         "上海未来3天天气预报"
                     ]
-                },
-                {
-                    "name": "chat",
-                    "description": "普通聊天对话",
-                    "actions": [
-                        "chat - 自由对话"
-                    ]
-                }
+                ),
+                CapabilityModule(
+                    name="chat",
+                    description="普通聊天对话",
+                    actions=["chat - 自由对话"]
+                )
             ],
-            "features": [
+            features=[
                 "自然语言理解",
                 "意图识别",
                 "语音输入支持",
@@ -243,8 +316,8 @@ async def get_capabilities():
                 "智能参数提取",
                 "真实业务操作执行"
             ]
-        }
-    }
+        )
+    )
 
 
 @router.get("/chat/history/{session_id}")
@@ -269,13 +342,21 @@ async def get_chat_history(
         
         messages = await get_session_messages(db, session_id, limit=100)
         
-        return {
-            "code": 200,
-            "message": "获取成功",
-            "data": {
-                "session_id": session_id,
-                "messages": messages
-            }
-        }
+        return ChatHistoryResponse(
+            code=200,
+            message="获取成功",
+            data=ChatHistoryData(
+                session_id=session_id,
+                messages=[
+                    ChatHistoryMessage(
+                        id=msg.get("id", 0),
+                        role=msg.get("role", ""),
+                        content=msg.get("content", ""),
+                        created_at=msg.get("created_at", "")
+                    )
+                    for msg in messages
+                ]
+            )
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取历史失败: {str(e)}")

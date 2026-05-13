@@ -63,3 +63,26 @@ class SuggestionResponse(BaseModel):
     code: int = 200
     message: str = "获取成功"
     data: Optional[WeatherSuggestion] = None
+
+
+class WeatherSuggestionDetail(BaseModel):
+    """天气建议详情"""
+    daily: str = "天气适宜"
+    meeting: str = "无特殊建议"
+
+
+class AllWeatherData(BaseModel):
+    """完整天气数据"""
+    city: str
+    date: str
+    current: dict = {}
+    forecast: list = []
+    hourly: list = []
+    suggestion: Optional[WeatherSuggestionDetail] = None
+
+
+class AllWeatherResponse(BaseModel):
+    """完整天气响应"""
+    code: int = 200
+    message: str = "获取成功"
+    data: Optional[AllWeatherData] = None

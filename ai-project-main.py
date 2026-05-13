@@ -3,6 +3,7 @@ import urllib3
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import datetime
+import logging
 from dotenv import load_dotenv
 
 # 禁用SSL验证（开发环境，解决阿里云API证书问题）
@@ -13,8 +14,22 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 加载环境变量(从.env文件读取)
 load_dotenv()
 
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # 控制台输出
+        logging.FileHandler('app.log', encoding='utf-8')  # 文件输出
+    ]
+)
+logger = logging.getLogger(__name__)
+
 # 导入子路由模块
 from routers import auth, todo, meeting, weather, agent, meeting_nlp
+
+# 导入中间件
+from middleware import RequestLoggingMiddleware, ExceptionHandlingMiddleware, AuditLoggingMiddleware
 
 app = FastAPI(
     title="AI数字员工系统",
@@ -22,7 +37,17 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# 配置CORS
+# 注册中间件（注意：中间件的执行顺序与添加顺序相反）
+# 1. 审计日志中间件 - 记录关键操作
+app.add_middleware(AuditLoggingMiddleware)
+
+# 2. 请求日志中间件 - 记录所有请求
+app.add_middleware(RequestLoggingMiddleware)
+
+# 3. 异常处理中间件 - 全局异常捕获
+app.add_middleware(ExceptionHandlingMiddleware)
+
+# 4. CORS中间件 - 跨域支持
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],  # 明确允许前端地址

@@ -2,7 +2,12 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 import datetime
 
 # 导入Pydantic模式
-from schemas.auth_schemas import LoginRequest, RegisterRequest, UserInfo, TokenData, AuthResponse
+from schemas.auth_schemas import (
+    LoginRequest, RegisterRequest, UserInfo, TokenData, AuthResponse,
+    LogoutResponse, SessionListResponse, SessionInfo,
+    UserInfoResponse, UserInfoDetail, UpdateUserInfoRequest,
+    UpdateUserInfoResponse, LogoutAllResponse
+)
 
 # 导入工具函数
 from utils.auth_utils import hash_password, verify_password
@@ -99,10 +104,10 @@ async def logout(
     if not success:
         raise HTTPException(status_code=400, detail="Token不存在")
     
-    return {
-        "code": 200,
-        "message": "登出成功"
-    }
+    return LogoutResponse(
+        code=200,
+        message="登出成功"
+    )
 
 
 @router.post("/register", response_model=AuthResponse)
@@ -203,22 +208,24 @@ async def get_my_sessions(
     """获取当前用户的所有活跃会话"""
     sessions = await session_crud.get_user_active_sessions(db, current_user_id)
     
-    return {
-        "code": 200,
-        "message": f"共{len(sessions)}个活跃会话",
-        "data": [
-            {
-                "id": s.id,
-                "ip_address": s.ip_address,
-                "user_agent": s.user_agent[:50] + "..." if s.user_agent and len(s.user_agent) > 50 else s.user_agent,
-                "device_info": s.device_info,
-                "created_at": s.created_at.isoformat(),
-                "last_used_at": s.last_used_at.isoformat(),
-                "expires_at": s.expires_at.isoformat()
-            }
-            for s in sessions
-        ]
-    }
+    session_list = [
+        SessionInfo(
+            id=s.id,
+            ip_address=s.ip_address,
+            user_agent=s.user_agent[:50] + "..." if s.user_agent and len(s.user_agent) > 50 else s.user_agent,
+            device_info=s.device_info,
+            created_at=s.created_at.isoformat(),
+            last_used_at=s.last_used_at.isoformat(),
+            expires_at=s.expires_at.isoformat()
+        )
+        for s in sessions
+    ]
+    
+    return SessionListResponse(
+        code=200,
+        message=f"共{len(session_list)}个活跃会话",
+        data=session_list
+    )
 
 
 @router.get("/me")
@@ -255,21 +262,21 @@ async def get_current_user_info(
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
     
-    return {
-        "code": 200,
-        "message": "获取成功",
-        "data": {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email or "",
-            "description": user.description or "",  # ✅ 个人描述/标签
-            "avatar_url": user.avatar_url or "",
-            "role": user.role,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
-            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
-            "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None
-        }
-    }
+    return UserInfoResponse(
+        code=200,
+        message="获取成功",
+        data=UserInfoDetail(
+            id=user.id,
+            username=user.username,
+            email=user.email or "",
+            description=user.description or "",
+            avatar_url=user.avatar_url or "",
+            role=user.role,
+            created_at=user.created_at.isoformat() if user.created_at else None,
+            updated_at=user.updated_at.isoformat() if user.updated_at else None,
+            last_login_at=user.last_login_at.isoformat() if user.last_login_at else None
+        )
+    )
 
 
 @router.put("/me")
@@ -318,14 +325,14 @@ async def update_current_user_info(
     if not updated_user:
         raise HTTPException(status_code=404, detail="用户不存在")
     
-    return {
-        "code": 200,
-        "message": "更新成功",
-        "data": {
+    return UpdateUserInfoResponse(
+        code=200,
+        message="更新成功",
+        data={
             "email": updated_user.email or "",
             "description": updated_user.description or ""
         }
-    }
+    )
 
 
 @router.post("/sessions/logout-all")
@@ -336,7 +343,7 @@ async def logout_all_sessions(
     """登出所有设备(强制下线)"""
     count = await session_crud.invalidate_all_user_sessions(db, current_user_id)
     
-    return {
-        "code": 200,
-        "message": f"已登出{count}个设备"
-    }
+    return LogoutAllResponse(
+        code=200,
+        message=f"已登出{count}个设备"
+    )

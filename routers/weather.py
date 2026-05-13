@@ -5,7 +5,8 @@ import httpx
 # 导入Pydantic模式
 from schemas.weather_schemas import (
     CurrentWeather, WeatherForecast, WeatherSuggestion,
-    CurrentWeatherResponse, ForecastResponse, SuggestionResponse
+    CurrentWeatherResponse, ForecastResponse, SuggestionResponse,
+    AllWeatherResponse, AllWeatherData, WeatherSuggestionDetail
 )
 
 # 导入数据库配置
@@ -161,18 +162,18 @@ async def get_all_weather(
         # 生成天气建议
         suggestion = _generate_weather_suggestion(current_data, forecast_data)
         
-        return {
-            "code": 200,
-            "message": "获取成功",
-            "data": {
-                "city": city,
-                "date": date,
-                "current": current_data,          # 左侧：指定日期天气
-                "forecast": forecast_data[:7],    # 右侧：7天预报
-                "hourly": hourly_data,            # 下方：24小时预报
-                "suggestion": suggestion          # 智能建议
-            }
-        }
+        return AllWeatherResponse(
+            code=200,
+            message="获取成功",
+            data=AllWeatherData(
+                city=city,
+                date=date,
+                current=current_data,
+                forecast=forecast_data[:7],
+                hourly=hourly_data,
+                suggestion=WeatherSuggestionDetail(**suggestion) if suggestion else None
+            )
+        )
     except HTTPException:
         raise
     except Exception as e:

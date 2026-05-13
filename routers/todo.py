@@ -6,7 +6,7 @@ import datetime
 from schemas.todo_schemas import (
     TodoCreate, TodoUpdate, TodoItem, 
     TodoListResponse, TodoStats, TodoStatsResponse,
-    TodoStatusUpdateResponse, ReminderReadResponse
+    TodoStatusUpdateResponse, ReminderReadResponse, OverdueTodosResponse
 )
 
 # 导入数据库配置
@@ -17,6 +17,9 @@ from crud import todo_crud
 
 # 导入Session认证
 from utils.session_auth import get_current_user_id_from_session
+
+# 导入数据转换工具
+from utils.data_converter import convert_to_todo_items
 
 router = APIRouter(
     prefix="/todo",
@@ -78,24 +81,8 @@ async def get_todo_list(
         db, current_user_id, status, category, time_status, tag, page, page_size
     )
     
-    # 转换为响应格式
-    todo_items = [
-        TodoItem(
-            id=todo.id,
-            title=todo.title,
-            description=todo.description,
-            status=todo.status,
-            priority=todo.priority,
-            category=todo.category,
-            due_date=todo.due_date,
-            completed_at=todo.completed_at,
-            reminder_enabled=todo.reminder_enabled,
-            is_reminded=todo.is_reminded,
-            created_at=todo.created_at,
-            updated_at=todo.updated_at
-        )
-        for todo in todos
-    ]
+    # 使用工具函数转换
+    todo_items = convert_to_todo_items(todos)
     
     return TodoListResponse(
         code=200,
@@ -116,24 +103,8 @@ async def get_todo_list_debug(
     # 查询待办事项
     todos = await todo_crud.get_todos_by_user_id(db, debug_user_id)
     
-    # 转换为响应格式
-    todo_items = [
-        TodoItem(
-            id=todo.id,
-            title=todo.title,
-            description=todo.description,
-            status=todo.status,
-            priority=todo.priority,
-            category=todo.category,
-            due_date=todo.due_date,
-            completed_at=todo.completed_at,
-            reminder_enabled=todo.reminder_enabled,
-            is_reminded=todo.is_reminded,
-            created_at=todo.created_at,
-            updated_at=todo.updated_at
-        )
-        for todo in todos
-    ]
+    # 使用工具函数转换
+    todo_items = convert_to_todo_items(todos)
     
     return TodoListResponse(
         code=200,
@@ -266,31 +237,17 @@ async def get_overdue_todos_soon(
         db, current_user_id, hours, page, page_size
     )
     
-    todo_items = [
-        TodoItem(
-            id=todo.id,
-            title=todo.title,
-            description=todo.description,
-            status=todo.status,
-            priority=todo.priority,
-            category=todo.category,
-            due_date=todo.due_date,
-            completed_at=todo.completed_at,
-            reminder_enabled=todo.reminder_enabled,
-            is_reminded=todo.is_reminded,
-            created_at=todo.created_at,
-            updated_at=todo.updated_at
-        )
-        for todo in todos
-    ]
+    # 使用工具函数转换
+    todo_items = convert_to_todo_items(todos)
     
-    return {
-        "code": 200,
-        "message": f"查询成功，共{total}条即将逾期",
-        "data": {
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "todos": todo_items
-        }
-    }
+    from schemas.todo_schemas import OverdueTodosData
+    return OverdueTodosResponse(
+        code=200,
+        message=f"查询成功，共{total}条即将逾期",
+        data=OverdueTodosData(
+            total=total,
+            page=page,
+            page_size=page_size,
+            todos=todo_items
+        )
+    )

@@ -2,7 +2,7 @@
 通用响应模型
 定义统一的API响应格式
 """
-from typing import Generic, TypeVar, Optional, Any
+from typing import Generic, TypeVar, Optional, Any, List
 from pydantic import BaseModel
 
 # 泛型类型变量
@@ -34,12 +34,17 @@ class ErrorResponse(BaseResponse):
 
 class ListResponse(BaseResponse, Generic[T]):
     """列表响应模型"""
-    data: list[T] = []
+    data: List[T] = []
+
+
+class PageData(BaseModel, Generic[T]):
+    """分页数据结构"""
+    total: int = 0
+    page: int = 1
+    page_size: int = 10
+    items: List[T] = []
 
 
 class PageResponse(BaseResponse, Generic[T]):
     """分页响应模型"""
-    data: list[T] = []
-    total: int = 0
-    page: int = 1
-    page_size: int = 10
+    data: Optional[PageData[T]] = None

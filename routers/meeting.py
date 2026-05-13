@@ -22,6 +22,9 @@ from utils.session_auth import get_current_user_id_from_session
 # 导入MeetingAgent
 from agent.meeting_agent import meeting_agent
 
+# 导入数据转换工具
+from utils.data_converter import convert_to_meeting_room, convert_to_booking_item
+
 router = APIRouter(
     prefix="/meeting",
     tags=["会议室模块"]
@@ -43,22 +46,8 @@ async def get_meeting_rooms(
         db, floor, lighting, min_capacity, page, page_size
     )
     
-    # 转换为响应格式
-    room_items = [
-        MeetingRoomSchema(
-            id=room.id,
-            name=room.name,
-            location=room.location,
-            capacity=room.capacity,
-            floor=room.floor,
-            building=room.building,
-            equipment=room.equipment or [],
-            status=room.status,
-            description=room.description,
-            image_url=room.image_url
-        )
-        for room in rooms
-    ]
+    # 使用工具函数转换
+    room_items = [convert_to_meeting_room(room) for room in rooms]
     
     return RoomListResponse(
         code=200,
@@ -80,23 +69,11 @@ async def get_my_bookings(
         db, current_user_id, page, page_size
     )
     
-    # 转换为响应格式
-    booking_items = []
-    for item in bookings_with_rooms:
-        booking = item["booking"]
-        room = item["room"]
-        
-        booking_items.append(BookingItem(
-            id=booking.id,
-            room_id=booking.room_id,
-            room_name=room.name if room else "未知会议室",
-            start_time=booking.start_time,
-            end_time=booking.end_time,
-            purpose=booking.purpose,
-            attendees=booking.attendees or [],
-            status=booking.status,
-            created_at=booking.created_at
-        ))
+    # 使用工具函数转换
+    booking_items = [
+        convert_to_booking_item(item["booking"], item["room"].name if item["room"] else "未知会议室")
+        for item in bookings_with_rooms
+    ]
     
     return BookingListResponse(
         code=200,

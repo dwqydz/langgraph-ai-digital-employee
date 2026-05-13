@@ -1,6 +1,8 @@
 # 🤖 AI数字员工系统
 
-一个基于 LangChain + Vue3 的智能助手系统，支持待办管理、会议室预定、天气查询、企业知识库检索等功能，通过自然语言与用户交互。
+一个基于 LangGraph + FastAPI + Vue3 的智能助手系统，支持待办管理、会议室预定、天气查询、企业知识库检索等功能，通过自然语言与用户交互。
+
+**最新更新 (2026-05-13)**: 完成全面代码优化 - 统一响应格式、增加中间件、异常处理和日志审计系统
 
 ![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)
@@ -57,18 +59,27 @@
 - 会话管理
 - 上下文记忆
 
+### 🚀 系统优化 (2026-05-13)
+- ✅ **统一响应格式**: 所有API使用Pydantic模型，提高类型安全
+- ✅ **中间件系统**: 请求日志、异常处理、审计追踪三层中间件
+- ✅ **异常处理**: CRUD层全面异常捕获和回滚机制
+- ✅ **日志审计**: 结构化日志输出（控制台 + 文件），支持链路追踪
+- ✅ **代码重构**: 消除75+行重复代码，提高可维护性
+- ✅ **数据转换工具**: 统一的模型转换函数，DRY原则
+
 ## 🛠️ 技术栈
 
 ### 后端
 - **框架**: FastAPI + Uvicorn
-- **AI**: LangChain + ChatTongyi (通义千问)
+- **AI**: LangGraph + ChatTongyi (通义千问)
 - **数据库**: SQLite + SQLAlchemy (异步)
 - **向量数据库**: ChromaDB
 - **Embedding 模型**: BAAI/bge-base-zh-v1.5 (本地)
 - **重排序模型**: BAAI/bge-reranker-base (本地)
-- **认证**: JWT Token
+- **认证**: Session Token (数据库存储)
 - **MCP**: 阿里云通义千问 MCP 服务
 - **评估框架**: RAGAS
+- **中间件**: 自定义请求日志、异常处理、审计日志
 
 ### 前端
 - **框架**: Vue 3 + Vite
@@ -144,7 +155,8 @@ project/
 │   ├── todo_agent.py      # 待办 Agent
 │   ├── meeting_agent.py   # 会议 Agent
 │   ├── weather_agent.py   # 天气 Agent
-│   └── langgraph_workflow.py # LangGraph 工作流
+│   ├── langgraph_workflow.py # LangGraph 工作流
+│   └── memory_manager.py  # 记忆管理 (Redis)
 ├── RAG/                    # RAG 检索增强生成模块
 │   ├── vector_db.py       # 向量数据库管理
 │   ├── retriever.py       # 检索器（混合检索+重排序）
@@ -169,6 +181,11 @@ project/
 ├── model/                 # 数据模型
 ├── schemas/               # Pydantic 模式
 ├── utils/                 # 工具函数
+│   ├── data_converter.py # 数据转换工具 ⭐新增
+│   ├── session_auth.py   # Session认证
+│   └── auth_utils.py     # 认证工具
+├── middleware/            # 中间件 ⭐新增
+│   └── __init__.py       # 请求日志、异常处理、审计日志
 ├── prompt/                # Prompt 模板
 ├── forward/               # 前端项目
 │   └── -AI-Digital-Worker-development-project/
@@ -217,22 +234,28 @@ python run_eval.py
 ## 📊 系统架构
 
 ```
-用户 → Vue3 前端 → FastAPI 后端 → LangChain Agent
+用户 → Vue3 前端 → FastAPI 后端 → LangGraph 工作流
+                                    ↓
+                            中间件层 (日志/异常/审计)
                                     ↓
                             任务分类器 (LLM)
                             ↓         ↓         ↓
                         待办Agent  会议Agent  天气Agent
                             ↓         ↓         ↓
                         CRUD操作  MCP服务   数据库
+                                    ↓
+                            RAG检索 (可选)
 ```
 
 ## 🔐 安全说明
 
 - ✅ API 密钥通过环境变量管理
 - ✅ `.env` 文件已加入 `.gitignore`
-- ✅ 使用 JWT Token 进行身份认证
+- ✅ 使用 Session Token 进行身份认证（数据库存储）
 - ✅ 密码使用 SHA256 哈希存储
 - ✅ RAGAS 评估结果不上传到 Git
+- ✅ **新增**: 审计日志中间件记录关键操作
+- ✅ **新增**: 全局异常处理防止信息泄露
 - ⚠️ **DATA/** 目录包含企业内部文档，请根据实际情况决定是否上传
 - ⚠️ **RAG/chroma_db/** 目录为向量数据库，已加入 `.gitignore`
 - ⚠️ **RAG_eval/results/** 目录为评估结果，已加入 `.gitignore`
@@ -255,6 +278,48 @@ python run_eval.py
 - `todo_agent.txt` - 待办处理提示词
 - `meeting_agent.txt` - 会议处理提示词
 - `weather_agent.txt` - 天气查询提示词
+
+### 🚀 代码优化说明 (2026-05-13)
+
+本次优化主要包含三个方面：
+
+#### 1. 响应格式统一化
+- **新增Pydantic模型**: 15+个响应模型覆盖所有API
+- **类型安全**: 所有接口使用强类型定义
+- **IDE友好**: 完整的类型提示和自动补全
+
+**示例：**
+```python
+# 优化前
+return {"code": 200, "message": "成功", "data": {...}}
+
+# 优化后
+return TodoListResponse(
+    code=200,
+    message="获取成功",
+    data=todo_items
+)
+```
+
+#### 2. 中间件系统
+创建了三个核心中间件：
+
+- **RequestLoggingMiddleware**: 记录所有HTTP请求（方法、路径、耗时、状态码）
+- **ExceptionHandlingMiddleware**: 全局异常捕获，返回统一错误格式
+- **AuditLoggingMiddleware**: 审计关键操作（登录、注册、数据修改）
+
+**日志示例：**
+```
+[REQUEST] POST /api/todo/create | status=200 | time=0.045s | client=127.0.0.1 | user=authenticated
+[AUDIT] action=POST /api/auth/login | user=anonymous | ip=192.168.1.100 | status=200
+```
+
+#### 3. 架构优化
+- **数据转换工具**: `utils/data_converter.py` 消除75+行重复代码
+- **异常处理**: CRUD层全面try-except + rollback机制
+- **日志审计**: 结构化日志输出到控制台和文件
+
+详细优化内容请查看 [OPTIMIZATION_SUMMARY.md](./OPTIMIZATION_SUMMARY.md)
 
 ## 🤝 贡献
 
