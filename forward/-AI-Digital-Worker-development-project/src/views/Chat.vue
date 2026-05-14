@@ -1,17 +1,46 @@
 <template>
   <div class="chat-page">
+    <!-- ✨ 使用统一PageHeader -->
+    <PageHeader
+      icon="💬"
+      title="AI 智能对话"
+      subtitle="随时随地，畅聊无限"
+      :icon-bg="'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'"
+    >
+      <template #actions>
+        <!-- 这里可以添加右侧操作按钮 -->
+      </template>
+    </PageHeader>
+    
     <div class="chat-container">
-      <div class="chat-header">
-        <h3>💬 AI 智能对话</h3>
-        <p class="chat-subtitle">随时随地，畅聊无限</p>
-      </div>
 
       <!-- 聊天消息区域 -->
       <div class="chat-messages" ref="messagesContainer">
-        <div v-if="messages.length === 0" class="empty-state">
+        <!-- ✨ 新增：历史消息加载骨架屏 -->
+        <SkeletonLoader 
+          v-if="isHistoryLoading && messages.length === 0"
+          :rows="5"
+          :card-count="2"
+          height="400px"
+        />
+        
+        <div v-if="messages.length === 0 && !isHistoryLoading" class="empty-state">
           <div class="empty-icon">🤖</div>
           <p>开始与AI助手对话吧！</p>
           <p class="empty-hint">您可以问我任何问题，或者随便聊聊</p>
+          
+          <!-- ✨ 新增：快捷回复按钮 -->
+          <div class="quick-actions">
+            <el-button size="small" @click="useQuickAction('帮我创建一个待办事项')">
+              📝 创建待办
+            </el-button>
+            <el-button size="small" @click="useQuickAction('预约一个会议室')">
+              🏢 预约会议
+            </el-button>
+            <el-button size="small" @click="useQuickAction('查询上海天气')">
+              🌤️ 查天气
+            </el-button>
+          </div>
         </div>
 
         <div
@@ -19,6 +48,7 @@
           :key="index"
           class="message-item"
           :class="{ 'user-message': message.role === 'user', 'agent-message': message.role === 'assistant' }"
+          :style="{ animationDelay: `${index * 0.05}s` }"
         >
           <div class="message-avatar">
             <span v-if="message.role === 'user'">👤</span>
@@ -28,7 +58,7 @@
             <div class="message-text" v-html="formatMessage(message.content)"></div>
             
             <!-- 会议室推荐卡片容器（分页展示） -->
-            <div v-if="message.recommendedRooms && message.recommendedRooms.length > 0" class="meeting-carousel">
+            <div v-if="message.recommendedRooms && Array.isArray(message.recommendedRooms) && message.recommendedRooms.length > 0" class="meeting-carousel">
               <div class="carousel-header">
                 <span class="carousel-title">🏢 找到 {{ message.recommendedRooms.length }} 个可用会议室</span>
                 <span class="carousel-hint">第 {{ getMeetingPage(message) + 1 }}/{{ getTotalPages(message) }} 页</span>
@@ -93,7 +123,7 @@
             </div>
             
             <!-- 待办事项卡片 -->
-            <div v-if="message.todoInfo" class="todo-card">
+            <div v-if="message.todoInfo && typeof message.todoInfo === 'object'" class="todo-card">
               <div class="card-header">
                 <span class="todo-title">✅ {{ message.todoInfo.title }}</span>
               </div>
@@ -151,38 +181,80 @@
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { chatWithAgent } from '@/api/modules/agent'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import PageHeader from '@/components/PageHeader.vue' // ✨ 新增
 
+const router = useRouter()
 const messages = ref([])
 const userInput = ref('')
 const isLoading = ref(false)
+const isHistoryLoading = ref(false) // ✨ 新增：历史消息加载状态
 const messagesContainer = ref(null)
 const sessionId = ref(localStorage.getItem('agent_session_id') || null)
 
 // 加载历史消息
 const loadHistory = async () => {
-  if (!sessionId.value) return
+  if (!sessionId.value) {
+    console.log('[Chat] 无会话ID，跳过加载历史')
+    return
+  }
+  
+  // ✨ 设置加载状态
+  isHistoryLoading.value = true
   
   try {
     const { getChatHistory } = await import('@/api/modules/agent')
     const result = await getChatHistory(sessionId.value)
     
+    // 安全检查返回数据
+    if (!result || !Array.isArray(result.messages)) {
+      console.warn('[Chat] 历史消息数据格式异常')
+      return
+    }
+    
     messages.value = result.messages.map(msg => ({
       role: msg.role,
-      content: msg.content,
-      created_at: msg.created_at
+      content: msg.content || '',
+      created_at: msg.created_at,
+      recommendedRooms: msg.recommended_rooms || [],
+      todoInfo: msg.todo_info || null
     }))
     
     scrollToBottom()
   } catch (error) {
-    console.error('加载历史失败:', error)
+    console.error('[Chat] 加载历史失败:', error)
+    
+    // Session失效处理
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      ElMessage.error('登录已过期，请重新登录')
+      localStorage.removeItem('agent_session_id')
+      setTimeout(() => {
+        router.push('/login')
+      }, 1500)
+      return
+    }
+    
+    // 其他错误
+    ElMessage.warning('加载聊天记录失败，将开始新对话')
+  } finally {
+    // ✨ 清除加载状态
+    isHistoryLoading.value = false
   }
 }
 
 // 发送消息
 const sendMessage = async () => {
   if (!userInput.value.trim() || isLoading.value) return
+  
+  // 输入长度限制
+  const MAX_INPUT_LENGTH = 2000
+  if (userInput.value.length > MAX_INPUT_LENGTH) {
+    ElMessage.warning(`输入内容不能超过${MAX_INPUT_LENGTH}字符`)
+    return
+  }
 
   const userMessage = {
     role: 'user',
@@ -207,16 +279,16 @@ const sendMessage = async () => {
     // 构建消息对象
     const agentMessage = {
       role: 'assistant',
-      content: result.response,
+      content: result.response || '抱歉，我没有理解您的问题。',
       timestamp: new Date()
     }
 
-    // 解析会议室推荐数据
+    // 解析会议室推荐数据（增加安全检查）
     if (result.task_type === 'meeting' && result.execution_result) {
       const execResult = result.execution_result
       
       // 如果有推荐的会议室
-      if (execResult.recommended_rooms && execResult.recommended_rooms.length > 0) {
+      if (execResult.recommended_rooms && Array.isArray(execResult.recommended_rooms) && execResult.recommended_rooms.length > 0) {
         agentMessage.recommendedRooms = execResult.recommended_rooms
         agentMessage.selectedRoomIndex = null // 初始未选择
         agentMessage.currentMeetingPage = 0 // 初始页码
@@ -224,27 +296,27 @@ const sendMessage = async () => {
           date: execResult.booking_date,
           start_time: execResult.start_time,
           end_time: execResult.end_time,
-          purpose: execResult.purpose
+          purpose: execResult.purpose || '会议'
         }
       }
       
       // 如果有匹配的预订
-      if (execResult.matched_bookings && execResult.matched_bookings.length > 0) {
+      if (execResult.matched_bookings && Array.isArray(execResult.matched_bookings) && execResult.matched_bookings.length > 0) {
         agentMessage.matchedBookings = execResult.matched_bookings
       }
     }
     
-    // 解析待办事项数据
+    // 解析待办事项数据（增加安全检查）
     if (result.task_type === 'todo' && result.execution_result) {
       const execResult = result.execution_result
       
       // 如果创建了待办
       if (execResult.todo_created) {
         agentMessage.todoInfo = {
-          title: execResult.title,
+          title: execResult.title || '新待办',
           due_date: execResult.due_date,
-          priority: execResult.priority,
-          description: execResult.description
+          priority: execResult.priority || 'medium',
+          description: execResult.description || ''
         }
       }
     }
@@ -252,8 +324,24 @@ const sendMessage = async () => {
     messages.value.push(agentMessage)
     scrollToBottom()
   } catch (error) {
-    console.error('发送消息失败:', error)
-    ElMessage.error('发送消息失败，请重试')
+    console.error('[Chat] 发送消息失败:', error)
+    
+    // Session失效处理
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      ElMessage.error('登录已过期，请重新登录')
+      localStorage.removeItem('agent_session_id')
+      setTimeout(() => {
+        router.push('/login')
+      }, 1500)
+      return
+    }
+    
+    // 超时处理
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      ElMessage.warning('请求超时，请检查网络连接后重试')
+    } else {
+      ElMessage.error('发送消息失败，请稍后重试')
+    }
 
     // 添加错误消息
     messages.value.push({
@@ -447,6 +535,12 @@ const getPriorityText = (priority) => {
   return texts[priority] || priority
 }
 
+// ✨ 新增：快捷回复功能
+const useQuickAction = (text) => {
+  userInput.value = text
+  sendMessage()
+}
+
 onMounted(() => {
   loadHistory()
   
@@ -522,16 +616,19 @@ onMounted(() => {
   height: calc(100vh - 60px); /* Chat页面占满剩余空间 */
   padding: 0;
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px; /* ✨ PageHeader和chat-container之间的间距 */
 }
 
 .chat-container {
+  flex: 1; /* ✨ 改为flex: 1，自动填充剩余空间 */
   display: flex;
   flex-direction: column;
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   overflow: hidden;
-  height: 100%;
   border: 1px solid var(--border-light);
 }
 
@@ -600,10 +697,43 @@ onMounted(() => {
   color: #c0c4cc;
 }
 
+/* ✨ 新增：快捷操作按钮 */
+.quick-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.quick-actions .el-button {
+  transition: all 0.3s ease;
+}
+
+.quick-actions .el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+}
+
 .message-item {
   display: flex;
   gap: 12px;
   max-width: 80%;
+  /* ✨ 新增：消息滑入动画 */
+  animation: messageSlideIn 0.3s ease-out forwards;
+  opacity: 0;
+}
+
+/* ✨ 新增：消息滑入动画关键帧 */
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .user-message {

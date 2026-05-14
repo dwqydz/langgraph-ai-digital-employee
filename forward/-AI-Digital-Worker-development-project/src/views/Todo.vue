@@ -1,27 +1,30 @@
 <template>
-  <div>
+  <div class="todo-page">
+    <!-- ✨ 使用统一PageHeader -->
+    <PageHeader
+      icon="📋"
+      title="待办事项"
+      subtitle="智能看板 · 高效管理"
+      :icon-bg="'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)'"
+    >
+      <template #actions>
+        <el-button 
+          type="info" 
+          plain 
+          size="small" 
+          @click="showHistoryDialog = true"
+        >
+          <el-icon><Clock /></el-icon>
+          历史记录
+        </el-button>
+        <ReminderButton ref="reminderButtonRef" />
+        <el-button type="text" size="small" @click="refreshTodos">
+          <el-icon><Refresh /></el-icon>
+        </el-button>
+      </template>
+    </PageHeader>
+    
     <div class="card">
-      <div class="card-header">
-        <h3>📋 待办事项 · 智能看板</h3>
-        <div class="header-actions">
-          <!-- 历史记录按钮 -->
-          <el-button 
-            type="info" 
-            plain 
-            size="small" 
-            @click="showHistoryDialog = true" 
-            class="history-btn"
-          >
-            <el-icon><Clock /></el-icon>
-            历史记录
-          </el-button>
-          <!-- 提醒按钮组件 -->
-          <ReminderButton ref="reminderButtonRef" />
-          <el-button type="text" size="small" @click="refreshTodos" class="refresh-btn">
-            <el-icon><Refresh /></el-icon>
-          </el-button>
-        </div>
-      </div>
       <!-- 统计图表与优化建议 -->
       <!-- 待办任务区域 -->
       <div v-if="!showCompletedTasks" class="grid-2col">
@@ -37,8 +40,35 @@
           </div>
         </div>
         <div>
-          <div v-for="task in paginatedTasks" :key="task.id" class="task-item">
-            <div>
+          <!-- ✨ 新增：批量操作工具栏 -->
+          <div v-if="pendingTasks.length > 0" class="batch-toolbar">
+            <el-checkbox 
+              v-model="selectAll" 
+              @change="handleSelectAll"
+              class="select-all-checkbox"
+            >
+              全选
+            </el-checkbox>
+            <div class="batch-actions" v-if="selectedTasks.length > 0">
+              <span class="selected-count">已选择 {{ selectedTasks.length }} 项</span>
+              <el-button size="small" type="success" @click="batchComplete">
+                <el-icon><Check /></el-icon>
+                批量完成
+              </el-button>
+              <el-button size="small" type="danger" @click="batchDelete">
+                <el-icon><Delete /></el-icon>
+                批量删除
+              </el-button>
+            </div>
+          </div>
+          
+          <div v-for="task in paginatedTasks" :key="task.id" class="task-item" :class="{ 'task-completed': task.justCompleted }">
+            <el-checkbox 
+              v-model="task.selected" 
+              @change="updateSelectedTasks"
+              class="task-checkbox"
+            />
+            <div class="task-content">
               <strong>{{ task.title }}</strong><br>
               <small>
                 截止: {{ task.deadline }} | {{ task.category }}
@@ -182,24 +212,9 @@
                共 {{ filteredHistoryTasks.length }} 条记录
              </div>
              
-             <div class="page-size-selector">
-               <span class="label">每页显示：</span>
-               <el-select 
-                 v-model="historyPageSize" 
-                 size="small" 
-                 @change="handleHistorySizeChange"
-                 class="page-size-select"
-               >
-                 <el-option label="5条/页" :value="5" />
-                 <el-option label="10条/页" :value="10" />
-                 <el-option label="20条/页" :value="20" />
-               </el-select>
-             </div>
-             
              <el-pagination
                v-model:current-page="historyCurrentPage"
-               v-model:page-size="historyPageSize"
-               :page-sizes="[5, 10, 20]"
+               :page-size="historyPageSize"
                :total="filteredHistoryTasks.length"
                layout="prev, pager, next"
                size="small"
@@ -235,6 +250,7 @@ import { Refresh, Check, Clock, Calendar, List } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { getTodoList, updateTodoStatus, getTodoStats } from '@/api/modules/todo'
 import ReminderButton from '@/components/ReminderButton.vue'
+import PageHeader from '@/components/PageHeader.vue' // ✨ 新增
 
 // 获取路由对象
 const route = useRoute()
@@ -313,10 +329,15 @@ const todoStats = ref({
   suggestion: '优先处理逾期任务'
 })
 
+// ✨ 新增：批量操作相关状态
+const selectAll = ref(false)
+const selectedTasks = ref([])
+
 // 获取代办列表
 const fetchTodoList = async () => {
   try {
-    const response = await getTodoList()
+    // 传递大 page_size 以获取所有任务（包括已完成和逾期）
+    const response = await getTodoList({ page: 1, page_size: 1000 })
     
     // API拦截器已经提取了response.data.data,所以response直接是数组
     const rawData = Array.isArray(response) ? response : []
@@ -350,7 +371,8 @@ const fetchTodoList = async () => {
         status: displayStatus,  // 使用动态计算的状态
         deadline: formatDueDate(task.due_date),        // due_date → deadline
         category: mapCategory(task.category),          // 英文分类 → 中文分类
-        completionTime: task.completed_at              // completed_at → completionTime (用于历史记录)
+        completionTime: task.completed_at,             // completed_at → completionTime (用于历史记录)
+        selected: false                                // ✨ 新增：批量选择状态
       }
     })
   } catch (error) {
@@ -409,16 +431,14 @@ const fetchTodoStats = async () => {
     // API拦截器已经提取了response.data.data,所以response直接是对象
     const statsData = response || {}
     
-    // 只统计"进行中"和"已完成"的任务(排除逾期)
-    const ongoingTasks = todoList.value.filter(task => task.status === '进行中')
+    // ✅ 修复：正确计算完成率
     const completedTasks = todoList.value.filter(task => task.status === '已完成')
+    const ongoingTasks = todoList.value.filter(task => task.status === '进行中')
     const overdueTasks = todoList.value.filter(task => task.status === '逾期')
     
-    // 计算完成率: (总任务数 - 逾期 - 未完成) / 总任务数
-    // 即: 1 - (逾期 + 未完成) / 总数
+    // 计算完成率：已完成任务数 / 总任务数
     const totalTasks = todoList.value.length
-    const incompleteTasks = ongoingTasks.length + overdueTasks.length
-    const completionRate = totalTasks > 0 ? Math.round(((totalTasks - incompleteTasks) / totalTasks) * 100) : 0
+    const completionRate = totalTasks > 0 ? Math.round((completedTasks.length / totalTasks) * 100) : 0
     
     // 生成建议文案 - 针对所有未完成任务
     let suggestion = ''
@@ -479,6 +499,107 @@ const getStatusClass = (status) => {
   if (status === '已完成') return 'status-done'
   if (status === '逾期') return 'status-overdue'
   return 'status-progress'
+}
+
+// ✨ 新增：全选/取消全选
+const handleSelectAll = (val) => {
+  pendingTasks.value.forEach(task => {
+    task.selected = val
+  })
+  updateSelectedTasks()
+}
+
+// ✨ 新增：更新选中任务列表
+const updateSelectedTasks = () => {
+  selectedTasks.value = pendingTasks.value.filter(task => task.selected)
+  
+  // 如果所有任务都被选中，更新全选状态
+  if (pendingTasks.value.length > 0) {
+    selectAll.value = pendingTasks.value.every(task => task.selected)
+  } else {
+    selectAll.value = false
+  }
+}
+
+// ✨ 新增：批量完成任务
+const batchComplete = async () => {
+  if (selectedTasks.value.length === 0) {
+    ElMessage.warning('请先选择任务')
+    return
+  }
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要将选中的 ${selectedTasks.value.length} 个任务标记为完成吗？`,
+      '✅ 批量完成',
+      {
+        confirmButtonText: '确认完成',
+        cancelButtonText: '取消',
+        type: 'success'
+      }
+    )
+    
+    const completionTime = new Date().toISOString()
+    
+    // 批量调用API
+    const promises = selectedTasks.value.map(task => 
+      updateTodoStatus(task.id, 'completed', completionTime)
+    )
+    
+    await Promise.all(promises)
+    
+    ElMessage.success(`已成功完成 ${selectedTasks.value.length} 个任务`)
+    
+    // 清空选中状态
+    selectedTasks.value = []
+    selectAll.value = false
+    pendingTasks.value.forEach(task => {
+      task.selected = false
+    })
+    
+    // 刷新数据
+    await refreshTodos()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('[Todo] 批量完成失败:', error)
+      ElMessage.error('批量完成失败: ' + (error.message || '未知错误'))
+    }
+  }
+}
+
+// ✨ 新增：批量删除任务
+const batchDelete = async () => {
+  if (selectedTasks.value.length === 0) {
+    ElMessage.warning('请先选择任务')
+    return
+  }
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedTasks.value.length} 个任务吗？此操作不可恢复！`,
+      '⚠️ 批量删除',
+      {
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    // TODO: 后端需要提供批量删除接口，目前先模拟
+    ElMessage.info('批量删除功能待后端支持')
+    
+    // 清空选中状态
+    selectedTasks.value = []
+    selectAll.value = false
+    pendingTasks.value.forEach(task => {
+      task.selected = false
+    })
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('[Todo] 批量删除失败:', error)
+      ElMessage.error('批量删除失败: ' + (error.message || '未知错误'))
+    }
+  }
 }
 
 // 格式化完成时间
@@ -600,10 +721,17 @@ const markOverdueAsCompleted = async (task) => {
     
     // 调用API更新状态（传递英文状态）
     await updateTodoStatus(task.id, 'completed', completionTime)
+    
+    // ✅ 立即更新本地状态，无需重新请求
+    task.status = '已完成'
+    task.completionTime = completionTime
+    
     ElMessage.success(`任务“${task.title}”已标记为完成`)
     
-    // 重新获取数据
-    await refreshTodos()
+    // 后台刷新数据（不阻塞UI）
+    refreshTodos().catch(err => {
+      console.error('[Todo] 后台刷新失败:', err)
+    })
     
     // 刷新提醒数据
     if (reminderButtonRef.value) {
@@ -612,14 +740,17 @@ const markOverdueAsCompleted = async (task) => {
   } catch (error) {
     // 用户点击取消时，不显示错误信息
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error('标记任务完成失败: ' + error.message)
+      console.error('[Todo] 标记完成失败:', error)
+      ElMessage.error('标记任务完成失败: ' + (error.message || '未知错误'))
     }
   }
 }
 
 // 刷新待办统计图表
 const refreshTodos = async () => {
-  await Promise.all([fetchTodoList(), fetchTodoStats()])
+  // ✅ 修复：先获取任务列表，再计算统计信息，避免竞态条件
+  await fetchTodoList()
+  await fetchTodoStats()
   nextTick(() => renderTodoChart())
 }
 
@@ -778,6 +909,13 @@ watch(
 </script>
 
 <style scoped>
+/* ✨ 新增：页面布局 */
+.todo-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .card {
   background: var(--bg-card);
   border-radius: 24px;
@@ -853,6 +991,29 @@ watch(
   border-radius: var(--radius-sm);
 }
 
+/* ✨ 新增：任务完成动画 */
+.task-item.task-completed {
+  animation: taskCompleteFade 0.5s ease-out forwards;
+}
+
+@keyframes taskCompleteFade {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 0.5;
+    transform: translateX(-10px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-20px);
+    height: 0;
+    padding: 0;
+    margin: 0;
+  }
+}
+
 .task-item:hover {
   background: #f8fafc;
   transform: translateX(4px);
@@ -878,6 +1039,44 @@ watch(
 .status-overdue { 
   background: #f8d7da; 
   color: #721c24; 
+}
+
+/* ✨ 新增：批量操作工具栏 */
+.batch-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #f0f9ff, #ffffff);
+  border-radius: 8px;
+  border: 1px solid #bae6fd;
+}
+
+.select-all-checkbox {
+  font-weight: 500;
+  color: #374151;
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.selected-count {
+  font-size: 0.85rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* ✨ 新增：任务复选框 */
+.task-checkbox {
+  margin-right: 12px;
+}
+
+.task-content {
+  flex: 1;
 }
 
 .btn-sm {
@@ -944,8 +1143,28 @@ watch(
 }
 
 .history-tasks-list {
-  max-height: 400px;
+  max-height: 60vh;
   overflow-y: auto;
+  padding-right: 8px;
+}
+
+/* 自定义滚动条样式 */
+.history-tasks-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-tasks-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.history-tasks-list::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.history-tasks-list::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
 }
 
 .history-task-item {

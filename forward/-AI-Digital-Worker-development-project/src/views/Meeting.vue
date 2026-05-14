@@ -1,28 +1,32 @@
 <template>
-  <div>
+  <div class="meeting-page">
+    <!-- ✨ 使用统一PageHeader -->
+    <PageHeader
+      icon="📅"
+      title="会议室预约"
+      subtitle="智能匹配 · 快速预定"
+      :icon-bg="'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)'"
+    >
+      <template #actions>
+        <el-button 
+          type="info" 
+          plain 
+          size="small" 
+          @click="showHistoryDialog = true"
+        >
+          <el-icon><Clock /></el-icon>
+          历史记录
+        </el-button>
+      </template>
+    </PageHeader>
+    
     <div class="card">
-      <div class="card-header">
-        <h3>📅 会议室智能预约</h3>
-        <div class="header-actions">
-          <!-- 历史记录按钮 -->
-          <el-button 
-            type="info" 
-            plain 
-            size="small" 
-            @click="showHistoryDialog = true" 
-            class="history-btn"
-          >
-            <el-icon><Clock /></el-icon>
-            历史记录
-          </el-button>
-        </div>
-      </div>
       <div class="grid-2col">
         <div>
           <h4>📌 可预约会议室</h4>
           
           <!-- 会议室列表 -->
-          <div v-for="room in paginatedRooms" :key="room.id" class="room-item">
+          <div v-for="room in paginatedRooms" :key="room.id" class="room-item" :class="{ 'booking-success': room.justBooked }">
             <div class="flex-between">
               <span><b>{{ room.name }}</b> ({{ room.capacity }}人)</span>
               <span :style="{color: room.available ? '#2ecc71' : '#e67e22'}">{{ room.available ? '可预约' : '已占用' }}</span>
@@ -36,7 +40,15 @@
                 <span>{{ room.location }}</span>
                 <span v-if="room.equipment" style="color: var(--text-secondary); font-size: 0.75rem;">• {{ room.equipment }}</span>
               </small>
-              <button class="btn-sm" v-if="room.available" @click="quickBookRoomHandler(room.id)">一键预定</button>
+              <button 
+                class="btn-sm" 
+                v-if="room.available" 
+                @click="quickBookRoomHandler(room.id)"
+                :disabled="room.bookingLoading"
+              >
+                <span v-if="room.bookingLoading">⏳ 预定中...</span>
+                <span v-else>一键预定</span>
+              </button>
             </div>
           </div>
           
@@ -278,6 +290,7 @@ import { useRoute, onBeforeRouteUpdate } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, List, Promotion } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
+import PageHeader from '@/components/PageHeader.vue' // ✨ 新增
 import { 
   getMeetingRooms, 
   getMyBookings, 
@@ -322,6 +335,16 @@ const historyPageSize = ref(5) // 每页显示5条历史记录
 
 // 历史记录筛选状态
 const historyFilter = ref('all') // all: 全部, completed: 预约完成, cancelled: 预约取消
+
+// ✅ 监听筛选变化，重置分页到第一页
+watch(historyFilter, () => {
+  historyCurrentPage.value = 1
+})
+
+// ✅ 监听筛选变化，重置分页到第一页
+watch(historyFilter, () => {
+  historyCurrentPage.value = 1
+})
 
 // 计算当前页显示的会议室
 const paginatedRooms = computed(() => {
@@ -457,6 +480,9 @@ const quickBookRoomHandler = async (roomId) => {
       return
     }
     
+    // ✨ 设置加载状态
+    room.bookingLoading = true
+    
     // 计算默认时间：明天下午15:00-16:00
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
@@ -478,14 +504,29 @@ const quickBookRoomHandler = async (roomId) => {
     // 调用后端API
     await quickBookRoom(roomId, bookingData)
     
-    ElMessage.success(`已成功预定 ${room.name}，时间：明天 15:00-16:00`)
+    // ✨ 标记为刚预订成功（触发动画）
+    room.justBooked = true
+    room.available = false
+    
+    ElMessage.success(`✅ 已成功预定 ${room.name}，时间：明天 15:00-16:00`)
     
     // 刷新数据：重新获取会议室列表和预约记录
     await Promise.all([fetchMeetingRooms(), fetchMyBookings()])
     
+    // ✨ 3秒后移除动画标记
+    setTimeout(() => {
+      room.justBooked = false
+    }, 3000)
+    
   } catch (error) {
     console.error('[Meeting] 预定失败:', error)
     ElMessage.error('预定失败: ' + error.message)
+  } finally {
+    // ✨ 清除加载状态
+    const room = meetingRooms.value.find(r => r.id === roomId)
+    if (room) {
+      room.bookingLoading = false
+    }
   }
 }
 
@@ -828,6 +869,13 @@ onBeforeRouteUpdate(async (to, from) => {
 </script>
 
 <style scoped>
+/* ✨ 新增：页面布局 */
+.meeting-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .card {
   background: var(--bg-card);
   border-radius: 24px;
@@ -868,6 +916,28 @@ onBeforeRouteUpdate(async (to, from) => {
   border: 1px solid var(--border-light);
   transition: all 0.25s ease;
   box-shadow: var(--shadow-sm);
+}
+
+/* ✨ 新增：预订成功动画 */
+.room-item.booking-success {
+  animation: bookingSuccessPulse 0.6s ease-out;
+  border-color: #10b981;
+  background: linear-gradient(135deg, #d1fae5 0%, #ffffff 100%);
+}
+
+@keyframes bookingSuccessPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(16, 185, 129, 0);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: var(--shadow-sm);
+  }
 }
 
 .room-item:hover {

@@ -1,18 +1,24 @@
 <template>
-  <div>
+  <div class="weather-page">
+    <!-- ✨ 使用统一PageHeader -->
+    <PageHeader
+      icon="🌤️"
+      title="智能天气助手"
+      subtitle="实时查询 · 生活建议"
+      :icon-bg="'linear-gradient(135deg, #fa709a 0%, #fee140 100%)'"
+    >
+      <template #actions>
+        <el-input 
+          v-model="weatherCity" 
+          placeholder="输入城市名称" 
+          style="width:200px" 
+          size="small"
+        ></el-input>
+        <el-button type="primary" size="small" @click="fetchWeather">查询天气</el-button>
+      </template>
+    </PageHeader>
+    
     <div class="card">
-      <div class="card-header">
-        <h3>🌤️ 智能天气助手</h3>
-        <div style="display: flex; gap: 16px; align-items: center;">
-          <el-input 
-            v-model="weatherCity" 
-            placeholder="输入城市名称" 
-            style="width:240px" 
-            size="medium"
-          ></el-input>
-          <el-button type="primary" size="medium" @click="fetchWeather">查询天气</el-button>
-        </div>
-      </div>
       <div class="grid-2col">
         <div>
           <div v-if="currentWeather" class="weather-card" style="background:linear-gradient(135deg,#e6f4ff,#fff);">
@@ -90,6 +96,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getAllWeather } from '@/api/modules/weather'
+import PageHeader from '@/components/PageHeader.vue' // ✨ 新增
 
 // 获取路由对象
 const route = useRoute()
@@ -156,6 +163,13 @@ const saveToCache = (city, current, forecast, hourly, suggestion) => {
 
 // 获取完整天气信息（一次调用获取所有数据）
 const fetchAllWeather = async (date = '今天', forceRefresh = false) => {
+  // ✅ 输入验证
+  const city = weatherCity.value.trim()
+  if (!city) {
+    ElMessage.warning('请输入城市名称')
+    return
+  }
+  
   // 如果不是强制刷新，先尝试从缓存加载
   if (!forceRefresh && loadFromCache()) {
     console.log('[Weather] 使用缓存数据，跳过API调用')
@@ -163,13 +177,13 @@ const fetchAllWeather = async (date = '今天', forceRefresh = false) => {
   }
   
   try {
-    const response = await getAllWeather(weatherCity.value, date)
+    const response = await getAllWeather(city, date)
     
     if (response) {
-      // 设置当前天气
+      // 设置当前天气（增加安全检查）
       if (response.current) {
         currentWeather.value = {
-          city: weatherCity.value,
+          city: city,
           temp: response.current.temperature || 0,
           condition: response.current.condition || '未知',
           humidity: response.current.humidity || 0,
@@ -178,8 +192,8 @@ const fetchAllWeather = async (date = '今天', forceRefresh = false) => {
         }
       }
       
-      // 设置7天预报
-      if (response.forecast && response.forecast.length > 0) {
+      // 设置7天预报（增加数组检查）
+      if (response.forecast && Array.isArray(response.forecast) && response.forecast.length > 0) {
         forecastData.value = response.forecast.slice(0, 7).map((item, index) => ({
           date: item.date || '',
           weekday: '',
@@ -188,23 +202,37 @@ const fetchAllWeather = async (date = '今天', forceRefresh = false) => {
           maxTemp: item.temperature_high || 0
         }))
         console.log('[Weather] 7天预报数据:', forecastData.value)
+      } else {
+        forecastData.value = []
+        console.warn('[Weather] 无7天预报数据')
       }
       
-      // 设置24小时预报
-      if (response.hourly) {
+      // 设置24小时预报（增加数组检查）
+      if (response.hourly && Array.isArray(response.hourly)) {
         hourlyData.value = response.hourly
         console.log('[Weather] 24小时预报数据:', hourlyData.value)
+      } else {
+        hourlyData.value = []
+        console.warn('[Weather] 无24小时预报数据')
       }
       
-      // 设置建议
-      if (response.suggestion) {
-        suggestionData.value = response.suggestion
+      // 设置建议（增加fallback）
+      if (response.suggestion && typeof response.suggestion === 'object') {
+        suggestionData.value = {
+          daily: response.suggestion.daily || '暂无生活建议',
+          meeting: response.suggestion.meeting || '暂无会议建议'
+        }
         console.log('[Weather] 天气建议:', suggestionData.value)
+      } else {
+        suggestionData.value = {
+          daily: '暂无生活建议',
+          meeting: '暂无会议建议'
+        }
       }
       
       // 保存到缓存
       saveToCache(
-        weatherCity.value,
+        city,
         currentWeather.value,
         forecastData.value,
         hourlyData.value,
@@ -213,6 +241,18 @@ const fetchAllWeather = async (date = '今天', forceRefresh = false) => {
     }
   } catch (error) {
     console.error('[Weather] 获取天气失败:', error)
+    
+    // ✅ 降级策略：尝试使用缓存数据
+    if (loadFromCache()) {
+      ElMessage.warning('获取最新天气失败，显示缓存数据')
+    } else {
+      ElMessage.error('天气查询失败，请稍后重试')
+      // 清空数据
+      currentWeather.value = null
+      forecastData.value = []
+      hourlyData.value = []
+      suggestionData.value = { daily: '', meeting: '' }
+    }
   }
 }
 
@@ -264,32 +304,52 @@ const generateWeekDates = () => {
 
 // 获取天气信息
 const fetchWeather = async () => {
+  // ✅ 输入验证
+  const city = weatherCity.value.trim()
+  if (!city) {
+    ElMessage.warning('请输入城市名称')
+    return
+  }
+  
   try {
-    // 使用统一的天气接口
-    await fetchAllWeather()
+    // ✨ 修复：强制刷新，清除旧城市缓存
+    sessionStorage.removeItem(CACHE_KEY)
+    console.log('[Weather] 清除缓存，查询新城市:', city)
+    
+    // 使用统一的天气接口，强制刷新
+    await fetchAllWeather('今天', true)
+    
+    ElMessage.success(`✅ 已更新 ${city} 的天气信息`)
   } catch (error) {
-    ElMessage.error('获取天气信息失败: ' + error.message)
-    // 降级处理：使用模拟数据
-    currentWeather.value = {
-      city: weatherCity.value,
-      temp: Math.floor(Math.random() * 15) + 12,
-      condition: '多云转晴',
-      humidity: 65,
-      wind: 12,
-      suggestion: weatherCity.value === '上海' ? '今日有雨带伞，建议室内会议' : '适合户外团建'
+    console.error('[Weather] 查询失败:', error)
+    
+    // ✅ 降级处理：优先使用缓存，其次模拟数据
+    if (loadFromCache()) {
+      ElMessage.warning('获取最新天气失败，显示缓存数据')
+    } else {
+      ElMessage.error('获取天气信息失败: ' + (error.message || '未知错误'))
+      // 使用模拟数据作为最后的降级方案
+      currentWeather.value = {
+        city: city,
+        temp: Math.floor(Math.random() * 15) + 12,
+        condition: '多云转晴',
+        humidity: 65,
+        wind: 12,
+        suggestion: city === '上海' ? '今日有雨带伞，建议室内会议' : '适合户外团建'
+      }
+      
+      // 生成模拟的天气预报数据
+      const weekDates = generateWeekDates()
+      const conditions = ['晴', '多云', '阴', '小雨', '阵雨', '晴转多云', '多云转晴']
+      
+      forecastData.value = weekDates.map((dateInfo, index) => ({
+        date: dateInfo.date,
+        weekday: dateInfo.weekday,
+        condition: conditions[index % conditions.length],
+        minTemp: Math.floor(Math.random() * 5) + 10,
+        maxTemp: Math.floor(Math.random() * 10) + 20
+      }))
     }
-    
-    // 生成模拟的天气预报数据
-    const weekDates = generateWeekDates()
-    const conditions = ['晴', '多云', '阴', '小雨', '阵雨', '晴转多云', '多云转晴']
-    
-    forecastData.value = weekDates.map((dateInfo, index) => ({
-      date: dateInfo.date,
-      weekday: dateInfo.weekday,
-      condition: conditions[index % conditions.length],
-      minTemp: Math.floor(Math.random() * 5) + 10,
-      maxTemp: Math.floor(Math.random() * 10) + 20
-    }))
   }
 }
 
@@ -317,6 +377,13 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* ✨ 新增：页面布局 */
+.weather-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .card {
   background: var(--bg-card);
   border-radius: 24px;

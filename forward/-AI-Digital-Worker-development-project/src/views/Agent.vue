@@ -231,6 +231,13 @@ export default {
   methods: {
     async sendMessage() {
       if (!this.userInput.trim() || this.isLoading) return
+      
+      // ✅ 输入长度限制
+      const MAX_INPUT_LENGTH = 2000
+      if (this.userInput.length > MAX_INPUT_LENGTH) {
+        ElMessage.warning(`输入内容不能超过${MAX_INPUT_LENGTH}字符`)
+        return
+      }
 
       const userMessage = {
         type: 'user',
@@ -256,10 +263,10 @@ export default {
             localStorage.setItem('agent_session_id', result.session_id)
           }
 
-          // 添加agent回复
+          // 添加agent回复（增加安全检查）
           const agentMessage = {
             type: 'agent',
-            text: result.response,
+            text: result.response || '抱歉，我没有理解您的问题。',
             timestamp: new Date(),
             taskType: result.task_type,
             executionResult: result.execution_result
@@ -300,8 +307,24 @@ export default {
           throw new Error(response.data.message || '请求失败')
         }
       } catch (error) {
-        console.error('发送消息失败:', error)
-        ElMessage.error('发送消息失败，请重试')
+        console.error('[Agent] 发送消息失败:', error)
+        
+        // ✅ Session失效处理
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          ElMessage.error('登录已过期，请重新登录')
+          localStorage.removeItem('agent_session_id')
+          setTimeout(() => {
+            this.$router.push('/login')
+          }, 1500)
+          return
+        }
+        
+        // ✅ 超时处理
+        if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+          ElMessage.warning('请求超时，请检查网络连接后重试')
+        } else {
+          ElMessage.error('发送消息失败，请稍后重试')
+        }
 
         // 添加错误消息
         this.messages.push({
