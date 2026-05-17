@@ -8,13 +8,24 @@ ASYNC_DATABASE_URL = os.getenv(
     "mysql+aiomysql://root:Hh261819.@localhost:3306/aiproject?charset=utf8"  # 默认本地MySQL
 )
 
+# 根据数据库类型判断是否使用连接池参数
+is_sqlite = "sqlite" in ASYNC_DATABASE_URL.lower()
+
 # 创建异步数据库引擎
-async_engine = create_async_engine(
-    ASYNC_DATABASE_URL,
-    echo=False,  # 生产环境关闭SQL日志
-    pool_size=20,
-    max_overflow=10
-)
+if is_sqlite:
+    # SQLite不支持连接池参数
+    async_engine = create_async_engine(
+        ASYNC_DATABASE_URL,
+        echo=False  # 生产环境关闭SQL日志
+    )
+else:
+    # MySQL/PostgreSQL等支持连接池
+    async_engine = create_async_engine(
+        ASYNC_DATABASE_URL,
+        echo=False,  # 生产环境关闭SQL日志
+        pool_size=20,
+        max_overflow=10
+    )
 
 # 创建异步会话工厂
 AsyncSessionLocal = async_sessionmaker(
